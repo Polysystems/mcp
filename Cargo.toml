@@ -1,0 +1,63 @@
+[package]
+name = "poly-mcp"
+version = "0.1.0"
+edition = "2021"
+authors = ["Poly MCP Team"]
+description = "A comprehensive MCP server with filesystem, diagnostics, scripting, time, network, context, git, and input tools"
+
+[lib]
+name = "poly_mcp"
+path = "src/lib.rs"
+
+[[bin]]
+name = "poly-mcp"
+path = "src/main.rs"
+
+[dependencies]
+# MCP SDK
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1.0", features = ["full"] }
+async-trait = "0.1"
+
+# Filesystem
+notify = "6.1"
+walkdir = "2.4"
+zip = "0.6"
+chrono = "0.4"
+dirs = "5.0"
+
+# Network
+reqwest = { version = "0.11", features = ["json"] }
+html2md = "0.2"
+
+# Git
+git2 = "0.18"
+
+# System info
+sysinfo = "0.30"
+
+# Clipboard
+cli-clipboard = "0.4"
+
+# Terminal UI
+indicatif = "0.17"
+dialoguer = "0.11"
+
+# Notifications
+notify-rust = "4.10"
+
+# Context/Token counting
+tiktoken-rs = "0.5"
+
+# Compression
+flate2 = "1.0"
+base64 = "0.21"
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = "0.3"
