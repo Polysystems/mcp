@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 authors = ["Poly MCP Team"]
 description = "A comprehensive MCP server with filesystem, diagnostics, scripting, time, network, context, git, and input tools"
+license = "MIT"
 
 [lib]
 name = "poly_mcp"
