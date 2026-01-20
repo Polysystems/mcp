@@ -8,8 +8,8 @@ A comprehensive MCP (Model Context Protocol) server with extensive tooling for f
 
 Advanced file and directory operations with snapshot management:
 
-- **fs_read** - Read file contents
-- **fs_write** - Write content to files
+- **fs_read** - Read file contents (with optional line ranges)
+- **fs_write** - Write content to files (with optional line ranges)
 - **fs_move** - Move files or directories
 - **fs_copy** - Copy files or directories recursively
 - **fs_create** - Create files or directories
@@ -145,6 +145,29 @@ The server communicates via JSON-RPC 2.0 over stdin/stdout following the MCP pro
 {
   "name": "fs_read",
   "arguments": {"path": "/etc/hosts"}
+}
+```
+
+### Read Specific Line Ranges
+```json
+{
+  "name": "fs_read",
+  "arguments": {
+    "path": "/var/log/app.log",
+    "lines": [[1, 10], [50, 60]]
+  }
+}
+```
+
+### Write to Specific Line Ranges
+```json
+{
+  "name": "fs_write",
+  "arguments": {
+    "path": "/tmp/config.txt",
+    "content": "# Header v2\nversion=2.0",
+    "lines": [[1, 2]]
+  }
 }
 ```
 

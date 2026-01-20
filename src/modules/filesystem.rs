@@ -31,13 +31,25 @@ impl FilesystemModule {
         vec![
             json!({
                 "name": "fs_read",
-                "description": "Read file contents",
+                "description": "Read file contents, optionally reading specific line ranges",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "path": {
                             "type": "string",
                             "description": "Path to the file to read"
+                        },
+                        "lines": {
+                            "type": "array",
+                            "description": "Optional array of line ranges to read, e.g. [[1,10], [15,20]] reads lines 1-10 and 15-20",
+                            "items": {
+                                "type": "array",
+                                "minItems": 2,
+                                "maxItems": 2,
+                                "items": {
+                                    "type": "integer"
+                                }
+                            }
                         }
                     },
                     "required": ["path"]
@@ -45,7 +57,7 @@ impl FilesystemModule {
             }),
             json!({
                 "name": "fs_write",
-                "description": "Write content to a file",
+                "description": "Write content to a file, optionally writing to specific line ranges",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -56,6 +68,18 @@ impl FilesystemModule {
                         "content": {
                             "type": "string",
                             "description": "Content to write to the file"
+                        },
+                        "lines": {
+                            "type": "array",
+                            "description": "Optional array of line ranges to replace, e.g. [[1,10], [15,20]]. Content will be split and replace specified ranges.",
+                            "items": {
+                                "type": "array",
+                                "minItems": 2,
+                                "maxItems": 2,
+                                "items": {
+                                    "type": "integer"
+                                }
+                            }
                         }
                     },
                     "required": ["path", "content"]
@@ -258,8 +282,35 @@ impl FilesystemModule {
 
     pub async fn read(&self, args: Value) -> Result<Value> {
         let path = args["path"].as_str().context("Missing 'path' parameter")?;
-        let content = fs::read_to_string(path)
+        let full_content = fs::read_to_string(path)
             .with_context(|| format!("Failed to read file: {}", path))?;
+
+        // Check if lines parameter is provided
+        let content = if let Some(lines_array) = args.get("lines").and_then(|v| v.as_array()) {
+            let all_lines: Vec<&str> = full_content.lines().collect();
+            let mut selected_lines = Vec::new();
+
+            for range in lines_array {
+                if let Some(range_arr) = range.as_array() {
+                    if range_arr.len() == 2 {
+                        let from = range_arr[0].as_i64().unwrap_or(1) as usize;
+                        let to = range_arr[1].as_i64().unwrap_or(all_lines.len() as i64) as usize;
+
+                        // Convert from 1-indexed to 0-indexed
+                        let from_idx = from.saturating_sub(1);
+                        let to_idx = to.min(all_lines.len());
+
+                        if from_idx < all_lines.len() && from_idx < to_idx {
+                            selected_lines.extend_from_slice(&all_lines[from_idx..to_idx]);
+                        }
+                    }
+                }
+            }
+
+            selected_lines.join("\n")
+        } else {
+            full_content
+        };
 
         Ok(json!({
             "path": path,
@@ -272,13 +323,55 @@ impl FilesystemModule {
         let path = args["path"].as_str().context("Missing 'path' parameter")?;
         let content = args["content"].as_str().context("Missing 'content' parameter")?;
 
-        fs::write(path, content)
+        // Check if lines parameter is provided
+        let final_content = if let Some(lines_array) = args.get("lines").and_then(|v| v.as_array()) {
+            // Read existing file or create empty if not exists
+            let existing_content = fs::read_to_string(path).unwrap_or_default();
+            let mut all_lines: Vec<String> = existing_content.lines().map(|s| s.to_string()).collect();
+            let new_lines: Vec<&str> = content.lines().collect();
+            let mut new_line_idx = 0;
+
+            for range in lines_array {
+                if let Some(range_arr) = range.as_array() {
+                    if range_arr.len() == 2 {
+                        let from = range_arr[0].as_i64().unwrap_or(1) as usize;
+                        let to = range_arr[1].as_i64().unwrap_or(all_lines.len() as i64) as usize;
+
+                        // Convert from 1-indexed to 0-indexed
+                        let from_idx = from.saturating_sub(1);
+                        let to_idx = to.min(all_lines.len());
+
+                        // Calculate how many lines to replace
+                        let range_size = to_idx.saturating_sub(from_idx);
+
+                        // Extend file if needed
+                        while all_lines.len() < to_idx {
+                            all_lines.push(String::new());
+                        }
+
+                        // Replace lines in this range with corresponding new lines
+                        for i in 0..range_size {
+                            if new_line_idx < new_lines.len() {
+                                all_lines[from_idx + i] = new_lines[new_line_idx].to_string();
+                                new_line_idx += 1;
+                            }
+                        }
+                    }
+                }
+            }
+
+            all_lines.join("\n") + "\n"
+        } else {
+            content.to_string()
+        };
+
+        fs::write(path, &final_content)
             .with_context(|| format!("Failed to write file: {}", path))?;
 
         Ok(json!({
             "success": true,
             "path": path,
-            "bytes_written": content.len()
+            "bytes_written": final_content.len()
         }))
     }
 

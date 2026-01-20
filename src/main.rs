@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::io::{self, BufRead, Write};
 use anyhow::Result;
+use clap::Parser;
+use is_terminal::IsTerminal;
 
 mod modules;
 use modules::{
@@ -14,6 +16,31 @@ use modules::{
     git::GitModule,
     input::InputModule,
 };
+
+/// Poly MCP - A comprehensive Model Context Protocol server
+///
+/// Provides 8 powerful modules for AI assistants:
+/// • Filesystem - File operations, snapshots, permissions
+/// • Diagnostics - Multi-language error detection
+/// • Silent - Bash scripting & resource monitoring
+/// • Time - Scheduling & time management
+/// • Network - HTTP requests & package queries
+/// • Context - Token counting & cost estimation
+/// • Git - Complete git operations via libgit2
+/// • Input - User interaction & notifications
+#[derive(Parser, Debug)]
+#[command(name = "poly-mcp")]
+#[command(version = env!("CARGO_PKG_VERSION"))]
+#[command(about = "A comprehensive MCP server with 8 powerful modules", long_about = None)]
+struct Cli {
+    /// List all available modules and their tools
+    #[arg(short, long)]
+    list_modules: bool,
+
+    /// Show verbose startup information
+    #[arg(short, long)]
+    verbose: bool,
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 struct JsonRpcRequest {
@@ -180,6 +207,78 @@ impl PolyMcp {
         }
     }
 
+    fn print_banner(&self, verbose: bool) {
+        eprintln!("\n╭────────────────────────────────────────────────────╮");
+        eprintln!("│         🔧 Poly MCP Server v{}              │", env!("CARGO_PKG_VERSION"));
+        eprintln!("╰────────────────────────────────────────────────────╯\n");
+
+        eprintln!("📡 Protocol: Model Context Protocol (MCP)");
+        eprintln!("🔗 Transport: stdio (stdin/stdout) - no network port");
+        eprintln!("📋 Format: JSON-RPC 2.0");
+        eprintln!("📦 Modules: 8 active modules loaded\n");
+
+        if verbose {
+            eprintln!("Available Modules:");
+            eprintln!("  • Filesystem    - 13 tools for file operations");
+            eprintln!("  • Diagnostics   - 1 tool for error detection");
+            eprintln!("  • Silent        - 2 tools for scripting & monitoring");
+            eprintln!("  • Time          - 3 tools for scheduling");
+            eprintln!("  • Network       - 6 tools for HTTP & packages");
+            eprintln!("  • Context       - 7 tools for token management");
+            eprintln!("  • Git           - 8 tools for version control");
+            eprintln!("  • Input         - 6 tools for user interaction\n");
+        }
+
+        eprintln!("✓ Server ready and listening for JSON-RPC requests...");
+        eprintln!("ℹ Use --help for more information\n");
+    }
+
+    fn list_all_modules(&self) {
+        println!("\n╭────────────────────────────────────────────────────╮");
+        println!("│         🔧 Poly MCP - Available Modules           │");
+        println!("╰────────────────────────────────────────────────────╯\n");
+
+        let modules = vec![
+            ("Filesystem", "File and directory operations", vec![
+                "fs_read", "fs_write", "fs_move", "fs_copy", "fs_create", "fs_delete",
+                "fs_move_desktop", "fs_find", "fs_ld", "fs_stat", "fs_permissions",
+                "fs_watch", "fs_snapshot"
+            ]),
+            ("Diagnostics", "Language-agnostic error detection", vec![
+                "diagnostics_get"
+            ]),
+            ("Silent", "Bash scripting and resource monitoring", vec![
+                "silent_script", "silent_resources"
+            ]),
+            ("Time", "Time management and scheduling", vec![
+                "time_now", "time_sleep", "time_schedule"
+            ]),
+            ("Network", "HTTP requests and package queries", vec![
+                "net_fetch", "net_cargo", "net_node", "net_python", "net_apt", "net_ping"
+            ]),
+            ("Context", "Token counting and cost estimation", vec![
+                "ctx_context", "ctx_compact", "ctx_remove", "ctx_token_count",
+                "ctx_memory_store", "ctx_memory_recall", "ctx_estimate_cost"
+            ]),
+            ("Git", "Complete git operations", vec![
+                "git_status", "git_diff", "git_commit", "git_branch",
+                "git_checkout", "git_blame", "git_log", "git_tag"
+            ]),
+            ("Input", "User interaction and notifications", vec![
+                "input_notify", "input_prompt", "input_select", "input_progress",
+                "input_clipboard_read", "input_clipboard_write"
+            ]),
+        ];
+
+        for (name, description, tools) in modules {
+            println!("📦 {} - {}", name, description);
+            println!("   {} tools: {}", tools.len(), tools.join(", "));
+            println!();
+        }
+
+        println!("Total: 46 tools across 8 modules\n");
+    }
+
     async fn handle_request(&mut self, request: JsonRpcRequest) -> JsonRpcResponse {
         let id = request.id.clone();
 
@@ -243,9 +342,24 @@ impl PolyMcp {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    let cli = Cli::parse();
+
+    // Initialize logging
     tracing_subscriber::fmt::init();
 
     let mut server = PolyMcp::new();
+
+    // Handle --list-modules flag
+    if cli.list_modules {
+        server.list_all_modules();
+        return Ok(());
+    }
+
+    // Only print startup banner if stdin is a terminal (interactive mode)
+    if io::stdin().is_terminal() {
+        server.print_banner(cli.verbose);
+    }
+
     let stdin = io::stdin();
     let mut stdout = io::stdout();
 
