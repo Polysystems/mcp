@@ -6,3 +6,4 @@ pub mod network;
 pub mod context;
 pub mod git;
 pub mod input;
+pub mod gitent;

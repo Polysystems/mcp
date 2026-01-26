@@ -1,9 +1,18 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::io::{self, BufRead, Write};
+use std::sync::Arc;
 use anyhow::Result;
 use clap::Parser;
 use is_terminal::IsTerminal;
+use tokio::sync::Mutex;
+use axum::{
+    extract::State,
+    response::{IntoResponse, Response},
+    routing::post,
+    Json, Router,
+};
+use tower_http::cors::CorsLayer;
 
 mod modules;
 use modules::{
@@ -15,11 +24,12 @@ use modules::{
     context::ContextModule,
     git::GitModule,
     input::InputModule,
+    gitent::GitentModule,
 };
 
 /// Poly MCP - A comprehensive Model Context Protocol server
 ///
-/// Provides 8 powerful modules for AI assistants:
+/// Provides 9 powerful modules for AI assistants:
 /// • Filesystem - File operations, snapshots, permissions
 /// • Diagnostics - Multi-language error detection
 /// • Silent - Bash scripting & resource monitoring
@@ -28,10 +38,11 @@ use modules::{
 /// • Context - Token counting & cost estimation
 /// • Git - Complete git operations via libgit2
 /// • Input - User interaction & notifications
+/// • Gitent - Agent-centric version control tracking
 #[derive(Parser, Debug)]
 #[command(name = "poly-mcp")]
 #[command(version = env!("CARGO_PKG_VERSION"))]
-#[command(about = "A comprehensive MCP server with 8 powerful modules", long_about = None)]
+#[command(about = "A comprehensive MCP server with 9 powerful modules", long_about = None)]
 struct Cli {
     /// List all available modules and their tools
     #[arg(short, long)]
@@ -40,6 +51,18 @@ struct Cli {
     /// Show verbose startup information
     #[arg(short, long)]
     verbose: bool,
+
+    /// Run as HTTP server instead of stdio mode
+    #[arg(short, long)]
+    server: bool,
+
+    /// Port to bind HTTP server to (default: 3000)
+    #[arg(short, long, default_value = "3000")]
+    port: u16,
+
+    /// Host to bind HTTP server to (default: 127.0.0.1)
+    #[arg(long, default_value = "127.0.0.1")]
+    host: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -77,6 +100,7 @@ struct PolyMcp {
     context: ContextModule,
     git: GitModule,
     input: InputModule,
+    gitent: GitentModule,
 }
 
 impl PolyMcp {
@@ -90,6 +114,7 @@ impl PolyMcp {
             context: ContextModule::new(),
             git: GitModule::new(),
             input: InputModule::new(),
+            gitent: GitentModule::new(),
         }
     }
 
@@ -132,6 +157,9 @@ impl PolyMcp {
 
         // Input tools
         tools.extend(self.input.get_tools());
+
+        // Gitent tools
+        tools.extend(self.gitent.get_tools());
 
         json!({ "tools": tools })
     }
@@ -203,6 +231,15 @@ impl PolyMcp {
             "input_clipboard_read" => self.input.clipboard_read(args).await,
             "input_clipboard_write" => self.input.clipboard_write(args).await,
 
+            // Gitent
+            "gitent_init" => self.gitent.init(args).await,
+            "gitent_status" => self.gitent.status(args).await,
+            "gitent_track" => self.gitent.track(args).await,
+            "gitent_commit" => self.gitent.commit(args).await,
+            "gitent_log" => self.gitent.log(args).await,
+            "gitent_diff" => self.gitent.diff(args).await,
+            "gitent_rollback" => self.gitent.rollback(args).await,
+
             _ => Err(anyhow::anyhow!("Unknown tool: {}", name)),
         }
     }
@@ -215,7 +252,7 @@ impl PolyMcp {
         eprintln!("📡 Protocol: Model Context Protocol (MCP)");
         eprintln!("🔗 Transport: stdio (stdin/stdout) - no network port");
         eprintln!("📋 Format: JSON-RPC 2.0");
-        eprintln!("📦 Modules: 8 active modules loaded\n");
+        eprintln!("📦 Modules: 9 active modules loaded\n");
 
         if verbose {
             eprintln!("Available Modules:");
@@ -226,7 +263,8 @@ impl PolyMcp {
             eprintln!("  • Network       - 6 tools for HTTP & packages");
             eprintln!("  • Context       - 7 tools for token management");
             eprintln!("  • Git           - 8 tools for version control");
-            eprintln!("  • Input         - 6 tools for user interaction\n");
+            eprintln!("  • Input         - 6 tools for user interaction");
+            eprintln!("  • Gitent        - 7 tools for agent tracking\n");
         }
 
         eprintln!("✓ Server ready and listening for JSON-RPC requests...");
@@ -268,6 +306,10 @@ impl PolyMcp {
                 "input_notify", "input_prompt", "input_select", "input_progress",
                 "input_clipboard_read", "input_clipboard_write"
             ]),
+            ("Gitent", "Agent-centric version control tracking", vec![
+                "gitent_init", "gitent_status", "gitent_track", "gitent_commit",
+                "gitent_log", "gitent_diff", "gitent_rollback"
+            ]),
         ];
 
         for (name, description, tools) in modules {
@@ -276,7 +318,7 @@ impl PolyMcp {
             println!();
         }
 
-        println!("Total: 46 tools across 8 modules\n");
+        println!("Total: 53 tools across 9 modules\n");
     }
 
     async fn handle_request(&mut self, request: JsonRpcRequest) -> JsonRpcResponse {
@@ -340,20 +382,32 @@ impl PolyMcp {
     }
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    let cli = Cli::parse();
+// Shared state type for HTTP server
+type SharedState = Arc<Mutex<PolyMcp>>;
 
-    // Initialize logging
-    tracing_subscriber::fmt::init();
+// HTTP handler for JSON-RPC requests
+async fn handle_jsonrpc(
+    State(state): State<SharedState>,
+    Json(request): Json<JsonRpcRequest>,
+) -> Response {
+    let mut server = state.lock().await;
+    let response = server.handle_request(request).await;
+    Json(response).into_response()
+}
 
+// HTTP handler for health check
+async fn health_check() -> Response {
+    Json(json!({
+        "status": "healthy",
+        "service": "poly-mcp",
+        "version": env!("CARGO_PKG_VERSION")
+    }))
+    .into_response()
+}
+
+// Run server in stdio mode (original behavior)
+async fn run_stdio_mode(cli: &Cli) -> Result<()> {
     let mut server = PolyMcp::new();
-
-    // Handle --list-modules flag
-    if cli.list_modules {
-        server.list_all_modules();
-        return Ok(());
-    }
 
     // Only print startup banner if stdin is a terminal (interactive mode)
     if io::stdin().is_terminal() {
@@ -396,4 +450,72 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+// Run server in HTTP mode
+async fn run_http_mode(cli: &Cli) -> Result<()> {
+    let server = PolyMcp::new();
+    let state = Arc::new(Mutex::new(server));
+
+    // Build HTTP router
+    let app = Router::new()
+        .route("/", post(handle_jsonrpc))
+        .route("/jsonrpc", post(handle_jsonrpc))
+        .route("/health", axum::routing::get(health_check))
+        .layer(CorsLayer::permissive())
+        .with_state(state);
+
+    let addr = format!("{}:{}", cli.host, cli.port);
+    let listener = tokio::net::TcpListener::bind(&addr).await?;
+
+    eprintln!("\n╭────────────────────────────────────────────────────╮");
+    eprintln!("│         🔧 Poly MCP Server v{}              │", env!("CARGO_PKG_VERSION"));
+    eprintln!("╰────────────────────────────────────────────────────╯\n");
+    eprintln!("📡 Protocol: Model Context Protocol (MCP)");
+    eprintln!("🔗 Transport: HTTP (JSON-RPC 2.0)");
+    eprintln!("🌐 Address: http://{}", addr);
+    eprintln!("📦 Modules: 9 active modules loaded");
+    eprintln!("💚 Health: http://{}/health\n", addr);
+
+    if cli.verbose {
+        eprintln!("Available Modules:");
+        eprintln!("  • Filesystem    - 13 tools for file operations");
+        eprintln!("  • Diagnostics   - 1 tool for error detection");
+        eprintln!("  • Silent        - 2 tools for scripting & monitoring");
+        eprintln!("  • Time          - 3 tools for scheduling");
+        eprintln!("  • Network       - 6 tools for HTTP & packages");
+        eprintln!("  • Context       - 7 tools for token management");
+        eprintln!("  • Git           - 8 tools for version control");
+        eprintln!("  • Input         - 6 tools for user interaction");
+        eprintln!("  • Gitent        - 7 tools for agent tracking\n");
+    }
+
+    eprintln!("✓ Server ready and listening for HTTP requests...");
+    eprintln!("ℹ Press Ctrl+C to stop\n");
+
+    axum::serve(listener, app).await?;
+
+    Ok(())
+}
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    let cli = Cli::parse();
+
+    // Initialize logging
+    tracing_subscriber::fmt::init();
+
+    // Handle --list-modules flag
+    if cli.list_modules {
+        let server = PolyMcp::new();
+        server.list_all_modules();
+        return Ok(());
+    }
+
+    // Choose mode based on CLI flags
+    if cli.server {
+        run_http_mode(&cli).await
+    } else {
+        run_stdio_mode(&cli).await
+    }
 }

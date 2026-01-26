@@ -1,6 +1,6 @@
 # Poly MCP
 
-A comprehensive MCP (Model Context Protocol) server with extensive tooling for filesystem operations, diagnostics, scripting, time management, network utilities, context handling, git operations, and user input.
+A comprehensive MCP (Model Context Protocol) server with extensive tooling for filesystem operations, diagnostics, scripting, time management, network utilities, context handling, git operations, user input, and agent-centric version control.
 
 ## Features
 
@@ -95,6 +95,20 @@ User interaction and notifications:
 - **input_clipboard_read** - Read from system clipboard
 - **input_clipboard_write** - Write to system clipboard
 
+### 9. Gitent Module
+
+Agent-centric version control tracking:
+
+- **gitent_init** - Initialize or connect to tracking session
+- **gitent_status** - View session and uncommitted changes
+- **gitent_track** - Manually track file changes (create/modify/delete/rename)
+- **gitent_commit** - Commit tracked changes with message
+- **gitent_log** - View commit history
+- **gitent_diff** - View differences in unified or structured format
+- **gitent_rollback** - Rollback to previous commit (preview mode by default)
+
+Track file changes, create commits, view history, and rollback operations during AI agent operations.
+
 ## Installation
 
 ```bash
@@ -103,13 +117,71 @@ cargo add poly-mcp
 
 ## Usage
 
-Run the MCP server:
+Poly MCP supports two transport modes: **stdio** (default) and **HTTP server**.
+
+### Stdio Mode (Default)
+
+Run the server using stdin/stdout (original MCP behavior):
 
 ```bash
 poly-mcp
 ```
 
-The server communicates via JSON-RPC 2.0 over stdin/stdout following the MCP protocol.
+The server communicates via JSON-RPC 2.0 over stdin/stdout following the MCP protocol. This is useful for piping commands or integrating with tools that expect stdio communication.
+
+**Example:**
+```bash
+echo '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | poly-mcp
+```
+
+### HTTP Server Mode
+
+Run as an HTTP server on a specific port:
+
+```bash
+poly-mcp --server --port 3000
+```
+
+**Options:**
+- `--server` or `-s` - Enable HTTP server mode
+- `--port <PORT>` or `-p <PORT>` - Port to bind to (default: 3000)
+- `--host <HOST>` - Host to bind to (default: 127.0.0.1)
+
+**Example usage:**
+```bash
+# Start server on default port 3000
+poly-mcp --server
+
+# Start server on custom port
+poly-mcp --server --port 8080
+
+# Start server on all interfaces
+poly-mcp --server --host 0.0.0.0 --port 3000
+```
+
+**HTTP Endpoints:**
+- `POST /` or `POST /jsonrpc` - JSON-RPC 2.0 endpoint
+- `GET /health` - Health check endpoint
+
+**Example HTTP request:**
+```bash
+curl -X POST http://localhost:3000/jsonrpc \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "tools/call",
+    "params": {
+      "name": "fs_read",
+      "arguments": {"path": "/etc/hosts"}
+    }
+  }'
+```
+
+**Health check:**
+```bash
+curl http://localhost:3000/health
+```
 
 ### MCP Protocol Messages
 
@@ -295,6 +367,53 @@ The server communicates via JSON-RPC 2.0 over stdin/stdout following the MCP pro
 {
   "name": "input_clipboard_write",
   "arguments": {"content": "Hello from Poly MCP!"}
+}
+```
+
+### Gitent Operations
+```json
+{
+  "name": "gitent_init",
+  "arguments": {"path": "./my-project"}
+}
+```
+
+```json
+{
+  "name": "gitent_track",
+  "arguments": {
+    "path": "src/main.rs",
+    "change_type": "modify",
+    "content": "fn main() { println!(\"Updated\"); }",
+    "agent_id": "claude"
+  }
+}
+```
+
+```json
+{
+  "name": "gitent_commit",
+  "arguments": {
+    "message": "Updated main function",
+    "agent_id": "claude"
+  }
+}
+```
+
+```json
+{
+  "name": "gitent_log",
+  "arguments": {"limit": 10, "verbose": true}
+}
+```
+
+```json
+{
+  "name": "gitent_rollback",
+  "arguments": {
+    "commit_id": "abc123...",
+    "execute": false
+  }
 }
 ```
 
