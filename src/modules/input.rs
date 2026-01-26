@@ -1,9 +1,9 @@
-use serde_json::{json, Value};
-use anyhow::{Result, Context as _};
-use notify_rust::Notification;
+use anyhow::{Context as _, Result};
+use cli_clipboard::{ClipboardContext, ClipboardProvider};
 use dialoguer::{Input, Select};
 use indicatif::{ProgressBar, ProgressStyle};
-use cli_clipboard::{ClipboardContext, ClipboardProvider};
+use notify_rust::Notification;
+use serde_json::{json, Value};
 
 pub struct InputModule;
 
@@ -157,7 +157,9 @@ impl InputModule {
 
     pub async fn notify(&self, args: Value) -> Result<Value> {
         let title = args["title"].as_str().unwrap_or("Poly MCP");
-        let message = args["message"].as_str().context("Missing 'message' parameter")?;
+        let message = args["message"]
+            .as_str()
+            .context("Missing 'message' parameter")?;
         let notification_type = args["type"].as_str().unwrap_or("both");
         let urgency = args["urgency"].as_str().unwrap_or("normal");
         let timeout = args["timeout"].as_u64().map(|t| t as i32);
@@ -184,11 +186,21 @@ impl InputModule {
             notification.summary(title);
             notification.body(message);
 
+            // Urgency is only supported on Linux
+            #[cfg(target_os = "linux")]
             match urgency {
-                "low" => { notification.urgency(notify_rust::Urgency::Low); }
-                "critical" => { notification.urgency(notify_rust::Urgency::Critical); }
-                _ => { notification.urgency(notify_rust::Urgency::Normal); }
+                "low" => {
+                    notification.urgency(notify_rust::Urgency::Low);
+                }
+                "critical" => {
+                    notification.urgency(notify_rust::Urgency::Critical);
+                }
+                _ => {
+                    notification.urgency(notify_rust::Urgency::Normal);
+                }
             }
+            #[cfg(not(target_os = "linux"))]
+            let _ = urgency; // Silence unused variable warning on non-Linux
 
             if let Some(t) = timeout {
                 notification.timeout(t);
@@ -209,14 +221,15 @@ impl InputModule {
     }
 
     pub async fn prompt_user(&self, args: Value) -> Result<Value> {
-        let prompt = args["prompt"].as_str().context("Missing 'prompt' parameter")?;
+        let prompt = args["prompt"]
+            .as_str()
+            .context("Missing 'prompt' parameter")?;
         let default_value = args["default"].as_str();
         let mode = args["mode"].as_str().unwrap_or("terminal");
 
         match mode {
             "terminal" => {
-                let input = Input::<String>::new()
-                    .with_prompt(prompt);
+                let input = Input::<String>::new().with_prompt(prompt);
 
                 let input = if let Some(default) = default_value {
                     input.default(default.to_string())
@@ -247,8 +260,12 @@ impl InputModule {
     }
 
     pub async fn select(&self, args: Value) -> Result<Value> {
-        let prompt = args["prompt"].as_str().context("Missing 'prompt' parameter")?;
-        let options = args["options"].as_array().context("Missing 'options' parameter")?;
+        let prompt = args["prompt"]
+            .as_str()
+            .context("Missing 'prompt' parameter")?;
+        let options = args["options"]
+            .as_array()
+            .context("Missing 'options' parameter")?;
         let default_idx = args["default"].as_u64().map(|i| i as usize);
         let mode = args["mode"].as_str().unwrap_or("terminal");
 
@@ -263,9 +280,7 @@ impl InputModule {
 
         match mode {
             "terminal" => {
-                let select = Select::new()
-                    .with_prompt(prompt)
-                    .items(&option_strs);
+                let select = Select::new().with_prompt(prompt).items(&option_strs);
 
                 let select = if let Some(idx) = default_idx {
                     select.default(idx)
@@ -298,12 +313,16 @@ impl InputModule {
     }
 
     pub async fn progress(&self, args: Value) -> Result<Value> {
-        let action = args["action"].as_str().context("Missing 'action' parameter")?;
+        let action = args["action"]
+            .as_str()
+            .context("Missing 'action' parameter")?;
         let id = args["id"].as_str().unwrap_or("default");
 
         match action {
             "start" => {
-                let total = args["total"].as_u64().context("Missing 'total' parameter for start action")?;
+                let total = args["total"]
+                    .as_u64()
+                    .context("Missing 'total' parameter for start action")?;
                 let message = args["message"].as_str().unwrap_or("Processing...");
 
                 let pb = ProgressBar::new(total);
@@ -327,7 +346,9 @@ impl InputModule {
                 }))
             }
             "update" => {
-                let current = args["current"].as_u64().context("Missing 'current' parameter for update action")?;
+                let current = args["current"]
+                    .as_u64()
+                    .context("Missing 'current' parameter for update action")?;
                 let message = args["message"].as_str();
 
                 // In a real implementation, we'd retrieve and update the stored progress bar
@@ -356,7 +377,8 @@ impl InputModule {
         let mut ctx = ClipboardContext::new()
             .map_err(|e| anyhow::anyhow!("Failed to access clipboard: {}", e))?;
 
-        let content = ctx.get_contents()
+        let content = ctx
+            .get_contents()
             .map_err(|e| anyhow::anyhow!("Failed to read clipboard: {}", e))?;
 
         Ok(json!({
@@ -366,7 +388,9 @@ impl InputModule {
     }
 
     pub async fn clipboard_write(&self, args: Value) -> Result<Value> {
-        let content = args["content"].as_str().context("Missing 'content' parameter")?;
+        let content = args["content"]
+            .as_str()
+            .context("Missing 'content' parameter")?;
 
         let mut ctx = ClipboardContext::new()
             .map_err(|e| anyhow::anyhow!("Failed to access clipboard: {}", e))?;
