@@ -36,8 +36,8 @@ html2md = "0.2"
 # Git
 git2 = "0.18"
 
-# Gitent
-gitent-core = { path = "../gitent/gitent-core" }
+# Gitent (optional - only works in workspace)
+gitent-core = { path = "../gitent/gitent-core", optional = true }
 
 # System info
 sysinfo = "0.30"
@@ -76,3 +76,7 @@ axum = "0.7"
 tower = "0.4"
 tower-http = { version = "0.5", features = ["cors", "trace"] }
 hyper = "1.0"
+
+[features]
+default = []
+gitent = ["gitent-core"]
