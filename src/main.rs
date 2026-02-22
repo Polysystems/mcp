@@ -25,9 +25,10 @@ use modules::{
     context::ContextModule,
     git::GitModule,
     input::InputModule,
-    gitent::GitentModule,
     transform::TransformModule,
 };
+#[cfg(feature = "gitent")]
+use modules::gitent::GitentModule;
 
 /// Poly MCP - A comprehensive Model Context Protocol server
 ///
@@ -104,6 +105,7 @@ struct PolyMcp {
     context: ContextModule,
     git: GitModule,
     input: InputModule,
+    #[cfg(feature = "gitent")]
     gitent: GitentModule,
     clipboard: ClipboardModule,
     transform: TransformModule,
@@ -120,6 +122,7 @@ impl PolyMcp {
             context: ContextModule::new(),
             git: GitModule::new(),
             input: InputModule::new(),
+            #[cfg(feature = "gitent")]
             gitent: GitentModule::new(),
             clipboard: ClipboardModule::new(),
             transform: TransformModule::new(),
@@ -167,6 +170,7 @@ impl PolyMcp {
         tools.extend(self.input.get_tools());
 
         // Gitent tools
+        #[cfg(feature = "gitent")]
         tools.extend(self.gitent.get_tools());
 
         // Clipboard tools
@@ -254,12 +258,19 @@ impl PolyMcp {
             "input_clipboard_write" => self.input.clipboard_write(args).await,
 
             // Gitent
+            #[cfg(feature = "gitent")]
             "gitent_init" => self.gitent.init(args).await,
+            #[cfg(feature = "gitent")]
             "gitent_status" => self.gitent.status(args).await,
+            #[cfg(feature = "gitent")]
             "gitent_track" => self.gitent.track(args).await,
+            #[cfg(feature = "gitent")]
             "gitent_commit" => self.gitent.commit(args).await,
+            #[cfg(feature = "gitent")]
             "gitent_log" => self.gitent.log(args).await,
+            #[cfg(feature = "gitent")]
             "gitent_diff" => self.gitent.diff(args).await,
+            #[cfg(feature = "gitent")]
             "gitent_rollback" => self.gitent.rollback(args).await,
 
             // Clipboard
