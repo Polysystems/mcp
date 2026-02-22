@@ -7,6 +7,7 @@ use chrono::Local;
 use notify::{Watcher, RecursiveMode};
 use walkdir::WalkDir;
 use std::sync::{Arc, Mutex};
+use regex::Regex;
 
 pub struct FilesystemModule {
     snapshots: Arc<Mutex<HashMap<String, Vec<SnapshotInfo>>>>,
@@ -174,7 +175,7 @@ impl FilesystemModule {
             }),
             json!({
                 "name": "fs_find",
-                "description": "Search for files and directories",
+                "description": "Search for files and directories by name pattern",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -184,12 +185,20 @@ impl FilesystemModule {
                         },
                         "pattern": {
                             "type": "string",
-                            "description": "Search pattern (glob or regex)"
+                            "description": "Search pattern (substring match, or glob with wildcards like *.rs)"
                         },
                         "type": {
                             "type": "string",
                             "enum": ["file", "dir", "all"],
-                            "description": "Type to search for"
+                            "description": "Type to search for (default: all)"
+                        },
+                        "max_depth": {
+                            "type": "number",
+                            "description": "Maximum directory depth to search (default: unlimited)"
+                        },
+                        "max_results": {
+                            "type": "number",
+                            "description": "Maximum number of results to return (default: 1000)"
                         }
                     },
                     "required": ["path", "pattern"]
@@ -277,6 +286,126 @@ impl FilesystemModule {
                     "required": ["path"]
                 }
             }),
+            json!({
+                "name": "fs_tree",
+                "description": "Display a visual directory tree structure. Much faster than recursive fs_find + fs_ld for understanding project layout.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "description": "Root directory path"
+                        },
+                        "max_depth": {
+                            "type": "number",
+                            "description": "Maximum depth to display (default: 4)"
+                        },
+                        "show_hidden": {
+                            "type": "boolean",
+                            "description": "Show hidden files/directories (default: false)"
+                        },
+                        "show_size": {
+                            "type": "boolean",
+                            "description": "Show file sizes (default: false)"
+                        },
+                        "dirs_only": {
+                            "type": "boolean",
+                            "description": "Only show directories (default: false)"
+                        },
+                        "pattern": {
+                            "type": "string",
+                            "description": "Only show entries matching this pattern (substring match)"
+                        }
+                    },
+                    "required": ["path"]
+                }
+            }),
+            json!({
+                "name": "fs_grep",
+                "description": "Search file contents by pattern across a directory. Returns matching lines with file paths and line numbers.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "description": "File or directory to search in"
+                        },
+                        "pattern": {
+                            "type": "string",
+                            "description": "Search pattern (regex supported)"
+                        },
+                        "case_insensitive": {
+                            "type": "boolean",
+                            "description": "Case-insensitive search (default: false)"
+                        },
+                        "max_results": {
+                            "type": "number",
+                            "description": "Maximum number of matches to return (default: 200)"
+                        },
+                        "context_lines": {
+                            "type": "number",
+                            "description": "Number of context lines before/after each match (default: 0)"
+                        },
+                        "file_pattern": {
+                            "type": "string",
+                            "description": "Only search files matching this pattern (e.g. '*.rs', '*.py')"
+                        }
+                    },
+                    "required": ["path", "pattern"]
+                }
+            }),
+            json!({
+                "name": "fs_tail",
+                "description": "Read the last N lines of a file. Essential for reading log files and build output.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "description": "Path to the file"
+                        },
+                        "lines": {
+                            "type": "number",
+                            "description": "Number of lines from the end (default: 20)"
+                        }
+                    },
+                    "required": ["path"]
+                }
+            }),
+            json!({
+                "name": "fs_replace",
+                "description": "Find and replace text across one or multiple files. Supports regex patterns and directory-wide bulk replacement.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "description": "File or directory to perform replacements in"
+                        },
+                        "find": {
+                            "type": "string",
+                            "description": "Text or regex pattern to find"
+                        },
+                        "replace": {
+                            "type": "string",
+                            "description": "Replacement text (supports $1 capture groups with regex)"
+                        },
+                        "regex": {
+                            "type": "boolean",
+                            "description": "Treat find as regex pattern (default: false)"
+                        },
+                        "file_pattern": {
+                            "type": "string",
+                            "description": "Only process files matching this pattern (e.g. '*.rs') — required for directories"
+                        },
+                        "dry_run": {
+                            "type": "boolean",
+                            "description": "Preview changes without writing (default: false)"
+                        }
+                    },
+                    "required": ["path", "find", "replace"]
+                }
+            }),
         ]
     }
 
@@ -284,6 +413,8 @@ impl FilesystemModule {
         let path = args["path"].as_str().context("Missing 'path' parameter")?;
         let full_content = fs::read_to_string(path)
             .with_context(|| format!("Failed to read file: {}", path))?;
+
+        let total_lines = full_content.lines().count();
 
         // Check if lines parameter is provided
         let content = if let Some(lines_array) = args.get("lines").and_then(|v| v.as_array()) {
@@ -296,7 +427,6 @@ impl FilesystemModule {
                         let from = range_arr[0].as_i64().unwrap_or(1) as usize;
                         let to = range_arr[1].as_i64().unwrap_or(all_lines.len() as i64) as usize;
 
-                        // Convert from 1-indexed to 0-indexed
                         let from_idx = from.saturating_sub(1);
                         let to_idx = to.min(all_lines.len());
 
@@ -315,7 +445,8 @@ impl FilesystemModule {
         Ok(json!({
             "path": path,
             "content": content,
-            "size": content.len()
+            "size": content.len(),
+            "total_lines": total_lines
         }))
     }
 
@@ -486,15 +617,33 @@ impl FilesystemModule {
         let root_path = args["path"].as_str().context("Missing 'path' parameter")?;
         let pattern = args["pattern"].as_str().context("Missing 'pattern' parameter")?;
         let search_type = args["type"].as_str().unwrap_or("all");
+        let max_results = args["max_results"].as_u64().unwrap_or(1000) as usize;
+
+        let mut walker = WalkDir::new(root_path);
+        if let Some(depth) = args["max_depth"].as_u64() {
+            walker = walker.max_depth(depth as usize);
+        }
+
+        // Determine if pattern is a glob (contains * or ?)
+        let is_glob = pattern.contains('*') || pattern.contains('?');
 
         let mut results = Vec::new();
 
-        for entry in WalkDir::new(root_path).into_iter().filter_map(|e| e.ok()) {
-            let path = entry.path();
-            let path_str = path.to_string_lossy();
+        for entry in walker.into_iter().filter_map(|e| e.ok()) {
+            if results.len() >= max_results {
+                break;
+            }
 
-            // Simple pattern matching (contains)
-            if !path_str.contains(pattern) {
+            let path = entry.path();
+            let file_name = entry.file_name().to_string_lossy();
+
+            let matches = if is_glob {
+                glob_match(pattern, &file_name)
+            } else {
+                file_name.contains(pattern) || path.to_string_lossy().contains(pattern)
+            };
+
+            if !matches {
                 continue;
             }
 
@@ -505,15 +654,22 @@ impl FilesystemModule {
                 _ => {}
             }
 
+            let size = path.metadata().map(|m| m.len()).unwrap_or(0);
+
             results.push(json!({
-                "path": path_str,
-                "type": if path.is_file() { "file" } else { "dir" }
+                "path": path.to_string_lossy(),
+                "name": file_name,
+                "type": if path.is_file() { "file" } else { "dir" },
+                "size": size
             }));
         }
 
+        let truncated = results.len() >= max_results;
+
         Ok(json!({
             "results": results,
-            "count": results.len()
+            "count": results.len(),
+            "truncated": truncated
         }))
     }
 
@@ -751,6 +907,351 @@ impl FilesystemModule {
             "total_snapshots": snapshot_list.len(),
             "max_snapshots": max_snapshots
         }))
+    }
+
+    pub async fn tree(&self, args: Value) -> Result<Value> {
+        let path = args["path"].as_str().context("Missing 'path' parameter")?;
+        let max_depth = args["max_depth"].as_u64().unwrap_or(4) as usize;
+        let show_hidden = args["show_hidden"].as_bool().unwrap_or(false);
+        let show_size = args["show_size"].as_bool().unwrap_or(false);
+        let dirs_only = args["dirs_only"].as_bool().unwrap_or(false);
+        let pattern = args["pattern"].as_str();
+
+        let root = Path::new(path);
+        if !root.exists() {
+            anyhow::bail!("Path does not exist: {}", path);
+        }
+
+        let mut output = String::new();
+        let mut file_count = 0usize;
+        let mut dir_count = 0usize;
+
+        output.push_str(&format!("{}\n", root.display()));
+        build_tree(root, "", max_depth, 0, show_hidden, show_size, dirs_only, pattern, &mut output, &mut file_count, &mut dir_count)?;
+
+        Ok(json!({
+            "tree": output,
+            "path": path,
+            "directories": dir_count,
+            "files": file_count,
+            "max_depth": max_depth
+        }))
+    }
+
+    pub async fn grep(&self, args: Value) -> Result<Value> {
+        let path = args["path"].as_str().context("Missing 'path' parameter")?;
+        let pattern = args["pattern"].as_str().context("Missing 'pattern' parameter")?;
+        let case_insensitive = args["case_insensitive"].as_bool().unwrap_or(false);
+        let max_results = args["max_results"].as_u64().unwrap_or(200) as usize;
+        let context_lines = args["context_lines"].as_u64().unwrap_or(0) as usize;
+        let file_pattern = args["file_pattern"].as_str();
+
+        let mut regex_pattern = String::new();
+        if case_insensitive {
+            regex_pattern.push_str("(?i)");
+        }
+        regex_pattern.push_str(pattern);
+
+        let re = Regex::new(&regex_pattern)
+            .with_context(|| format!("Invalid regex pattern: {}", pattern))?;
+
+        let root = Path::new(path);
+        let mut matches = Vec::new();
+
+        let files: Vec<PathBuf> = if root.is_file() {
+            vec![root.to_path_buf()]
+        } else {
+            WalkDir::new(root)
+                .into_iter()
+                .filter_map(|e| e.ok())
+                .filter(|e| e.path().is_file())
+                .filter(|e| {
+                    if let Some(fp) = file_pattern {
+                        let name = e.file_name().to_string_lossy();
+                        glob_match(fp, &name)
+                    } else {
+                        true
+                    }
+                })
+                .map(|e| e.path().to_path_buf())
+                .collect()
+        };
+
+        'outer: for file_path in &files {
+            let content = match fs::read_to_string(file_path) {
+                Ok(c) => c,
+                Err(_) => continue, // skip binary/unreadable files
+            };
+
+            let lines: Vec<&str> = content.lines().collect();
+
+            for (line_num, line) in lines.iter().enumerate() {
+                if re.is_match(line) {
+                    if matches.len() >= max_results {
+                        break 'outer;
+                    }
+
+                    let mut context_before = Vec::new();
+                    let mut context_after = Vec::new();
+
+                    if context_lines > 0 {
+                        let start = line_num.saturating_sub(context_lines);
+                        for i in start..line_num {
+                            context_before.push(lines[i]);
+                        }
+                        let end = (line_num + 1 + context_lines).min(lines.len());
+                        for i in (line_num + 1)..end {
+                            context_after.push(lines[i]);
+                        }
+                    }
+
+                    let mut entry = json!({
+                        "file": file_path.to_string_lossy(),
+                        "line": line_num + 1,
+                        "content": line
+                    });
+
+                    if context_lines > 0 {
+                        entry["context_before"] = json!(context_before);
+                        entry["context_after"] = json!(context_after);
+                    }
+
+                    matches.push(entry);
+                }
+            }
+        }
+
+        let truncated = matches.len() >= max_results;
+
+        Ok(json!({
+            "matches": matches,
+            "count": matches.len(),
+            "files_searched": files.len(),
+            "pattern": pattern,
+            "truncated": truncated
+        }))
+    }
+
+    pub async fn tail(&self, args: Value) -> Result<Value> {
+        let path = args["path"].as_str().context("Missing 'path' parameter")?;
+        let n = args["lines"].as_u64().unwrap_or(20) as usize;
+
+        let content = fs::read_to_string(path)
+            .with_context(|| format!("Failed to read file: {}", path))?;
+
+        let all_lines: Vec<&str> = content.lines().collect();
+        let total = all_lines.len();
+        let start = total.saturating_sub(n);
+        let tail_lines = &all_lines[start..];
+
+        Ok(json!({
+            "path": path,
+            "content": tail_lines.join("\n"),
+            "lines_returned": tail_lines.len(),
+            "total_lines": total,
+            "from_line": start + 1
+        }))
+    }
+
+    pub async fn replace(&self, args: Value) -> Result<Value> {
+        let path = args["path"].as_str().context("Missing 'path' parameter")?;
+        let find = args["find"].as_str().context("Missing 'find' parameter")?;
+        let replace_with = args["replace"].as_str().context("Missing 'replace' parameter")?;
+        let use_regex = args["regex"].as_bool().unwrap_or(false);
+        let dry_run = args["dry_run"].as_bool().unwrap_or(false);
+        let file_pattern = args["file_pattern"].as_str();
+
+        let root = Path::new(path);
+
+        let files: Vec<PathBuf> = if root.is_file() {
+            vec![root.to_path_buf()]
+        } else if root.is_dir() {
+            let fp = file_pattern.context("'file_pattern' is required when path is a directory")?;
+            WalkDir::new(root)
+                .into_iter()
+                .filter_map(|e| e.ok())
+                .filter(|e| e.path().is_file())
+                .filter(|e| glob_match(fp, &e.file_name().to_string_lossy()))
+                .map(|e| e.path().to_path_buf())
+                .collect()
+        } else {
+            anyhow::bail!("Path does not exist: {}", path);
+        };
+
+        let re = if use_regex {
+            Some(Regex::new(find).with_context(|| format!("Invalid regex: {}", find))?)
+        } else {
+            None
+        };
+
+        let mut results = Vec::new();
+        let mut total_replacements = 0usize;
+
+        for file_path in &files {
+            let content = match fs::read_to_string(file_path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            let (new_content, count) = if let Some(ref re) = re {
+                let count = re.find_iter(&content).count();
+                let replaced = re.replace_all(&content, replace_with).to_string();
+                (replaced, count)
+            } else {
+                let count = content.matches(find).count();
+                let replaced = content.replace(find, replace_with);
+                (replaced, count)
+            };
+
+            if count > 0 {
+                if !dry_run {
+                    fs::write(file_path, &new_content)
+                        .with_context(|| format!("Failed to write: {}", file_path.display()))?;
+                }
+                total_replacements += count;
+                results.push(json!({
+                    "file": file_path.to_string_lossy(),
+                    "replacements": count
+                }));
+            }
+        }
+
+        Ok(json!({
+            "success": true,
+            "dry_run": dry_run,
+            "files_modified": results.len(),
+            "total_replacements": total_replacements,
+            "files_searched": files.len(),
+            "details": results
+        }))
+    }
+}
+
+fn build_tree(
+    dir: &Path,
+    prefix: &str,
+    max_depth: usize,
+    current_depth: usize,
+    show_hidden: bool,
+    show_size: bool,
+    dirs_only: bool,
+    pattern: Option<&str>,
+    output: &mut String,
+    file_count: &mut usize,
+    dir_count: &mut usize,
+) -> Result<()> {
+    if current_depth >= max_depth {
+        return Ok(());
+    }
+
+    let mut entries: Vec<_> = fs::read_dir(dir)?
+        .filter_map(|e| e.ok())
+        .collect();
+
+    entries.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
+
+    // Filter hidden files
+    if !show_hidden {
+        entries.retain(|e| {
+            !e.file_name().to_string_lossy().starts_with('.')
+        });
+    }
+
+    // Filter by pattern
+    if let Some(pat) = pattern {
+        entries.retain(|e| {
+            let name = e.file_name().to_string_lossy().to_string();
+            let is_dir = e.path().is_dir();
+            is_dir || name.contains(pat) || glob_match(pat, &name)
+        });
+    }
+
+    // Filter dirs_only
+    if dirs_only {
+        entries.retain(|e| e.path().is_dir());
+    }
+
+    let count = entries.len();
+
+    for (i, entry) in entries.iter().enumerate() {
+        let is_last = i == count - 1;
+        let connector = if is_last { "└── " } else { "├── " };
+        let name = entry.file_name().to_string_lossy().to_string();
+        let path = entry.path();
+        let is_dir = path.is_dir();
+
+        let size_str = if show_size && !is_dir {
+            let size = path.metadata().map(|m| m.len()).unwrap_or(0);
+            format!(" ({})", format_size(size))
+        } else {
+            String::new()
+        };
+
+        let dir_marker = if is_dir { "/" } else { "" };
+
+        output.push_str(&format!("{}{}{}{}{}\n", prefix, connector, name, dir_marker, size_str));
+
+        if is_dir {
+            *dir_count += 1;
+            let new_prefix = format!("{}{}", prefix, if is_last { "    " } else { "│   " });
+            build_tree(&path, &new_prefix, max_depth, current_depth + 1, show_hidden, show_size, dirs_only, pattern, output, file_count, dir_count)?;
+        } else {
+            *file_count += 1;
+        }
+    }
+
+    Ok(())
+}
+
+fn format_size(bytes: u64) -> String {
+    if bytes >= 1_073_741_824 {
+        format!("{:.1}G", bytes as f64 / 1_073_741_824.0)
+    } else if bytes >= 1_048_576 {
+        format!("{:.1}M", bytes as f64 / 1_048_576.0)
+    } else if bytes >= 1024 {
+        format!("{:.1}K", bytes as f64 / 1024.0)
+    } else {
+        format!("{}B", bytes)
+    }
+}
+
+/// Simple glob matching: supports * (any chars) and ? (single char)
+fn glob_match(pattern: &str, text: &str) -> bool {
+    glob_match_recursive(&pattern.chars().collect::<Vec<_>>(), &text.chars().collect::<Vec<_>>(), 0, 0)
+}
+
+fn glob_match_recursive(pattern: &[char], text: &[char], pi: usize, ti: usize) -> bool {
+    if pi == pattern.len() && ti == text.len() {
+        return true;
+    }
+    if pi == pattern.len() {
+        return false;
+    }
+
+    match pattern[pi] {
+        '*' => {
+            // * matches zero or more characters
+            for i in ti..=text.len() {
+                if glob_match_recursive(pattern, text, pi + 1, i) {
+                    return true;
+                }
+            }
+            false
+        }
+        '?' => {
+            if ti < text.len() {
+                glob_match_recursive(pattern, text, pi + 1, ti + 1)
+            } else {
+                false
+            }
+        }
+        c => {
+            if ti < text.len() && (c == text[ti] || c.to_lowercase().next() == text[ti].to_lowercase().next()) {
+                glob_match_recursive(pattern, text, pi + 1, ti + 1)
+            } else {
+                false
+            }
+        }
     }
 }
 

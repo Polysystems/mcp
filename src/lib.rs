@@ -5,6 +5,7 @@ pub mod modules;
 
 // Re-export commonly used items
 pub use modules::{
+    clipboard::ClipboardModule,
     filesystem::FilesystemModule,
     diagnostics::DiagnosticsModule,
     silent::SilentModule,
@@ -13,4 +14,5 @@ pub use modules::{
     context::ContextModule,
     git::GitModule,
     input::InputModule,
+    transform::TransformModule,
 };

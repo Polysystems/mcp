@@ -3,7 +3,7 @@ use anyhow::{Result, Context as _};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tiktoken_rs::{cl100k_base, o200k_base};
-use flate2::write::ZlibEncoder;
+use flate2::write::{ZlibEncoder, GzEncoder};
 use flate2::Compression;
 use std::io::Write as _;
 
@@ -189,8 +189,13 @@ impl ContextModule {
         let original_size = text.len();
 
         let compressed = match algorithm {
-            "zlib" | "gzip" => {
-                let mut encoder = ZlibEncoder::new(Vec::new(), Compression::best());
+            "zlib" => {
+                let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+                encoder.write_all(text.as_bytes())?;
+                encoder.finish()?
+            }
+            "gzip" => {
+                let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
                 encoder.write_all(text.as_bytes())?;
                 encoder.finish()?
             }
@@ -322,20 +327,27 @@ impl ContextModule {
 
         let (input_price_per_1m, output_price_per_1m) = match (provider, model) {
             // Anthropic Claude pricing (per 1M tokens)
+            ("anthropic", "claude-opus-4") | ("anthropic", "claude-opus-4-6") => (15.0, 75.0),
+            ("anthropic", "claude-sonnet-4") | ("anthropic", "claude-sonnet-4-6") => (3.0, 15.0),
+            ("anthropic", "claude-haiku-4-5") | ("anthropic", "claude-haiku-4") => (0.80, 4.0),
             ("anthropic", "claude-3-opus") => (15.0, 75.0),
-            ("anthropic", "claude-3-sonnet") => (3.0, 15.0),
-            ("anthropic", "claude-3-haiku") => (0.25, 1.25),
-            ("anthropic", "claude-2") => (8.0, 24.0),
+            ("anthropic", "claude-3-sonnet") | ("anthropic", "claude-3.5-sonnet") => (3.0, 15.0),
+            ("anthropic", "claude-3-haiku") | ("anthropic", "claude-3.5-haiku") => (0.25, 1.25),
 
             // OpenAI pricing (per 1M tokens)
-            ("openai", "gpt-4") => (30.0, 60.0),
+            ("openai", "gpt-4o") => (2.50, 10.0),
+            ("openai", "gpt-4o-mini") => (0.15, 0.60),
             ("openai", "gpt-4-turbo") => (10.0, 30.0),
-            ("openai", "gpt-3.5-turbo") => (0.5, 1.5),
+            ("openai", "gpt-4") => (30.0, 60.0),
+            ("openai", "gpt-3.5-turbo") => (0.50, 1.50),
+            ("openai", "o1") => (15.0, 60.0),
+            ("openai", "o1-mini") => (3.0, 12.0),
+            ("openai", "o3-mini") => (1.10, 4.40),
 
             // Ollama (free/local)
             ("ollama", _) => (0.0, 0.0),
 
-            // GLM (example pricing - adjust as needed)
+            // GLM
             ("glm", "glm-4") => (1.0, 3.0),
 
             _ => return Err(anyhow::anyhow!("Unknown provider/model combination: {}/{}", provider, model)),

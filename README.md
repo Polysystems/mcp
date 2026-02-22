@@ -1,12 +1,12 @@
 # Poly MCP
 
-A comprehensive MCP (Model Context Protocol) server with extensive tooling for filesystem operations, diagnostics, scripting, time management, network utilities, context handling, git operations, user input, and agent-centric version control.
+A comprehensive MCP (Model Context Protocol) server with 73 tools across 11 modules — filesystem operations, diagnostics, scripting, time management, network utilities, context handling, git operations, user input, agent-centric version control, session clipboard, and text/data transforms.
 
 ## Features
 
 ### 1. Filesystem Module
 
-Advanced file and directory operations with snapshot management:
+Advanced file and directory operations with snapshot management, search, and bulk editing:
 
 - **fs_read** - Read file contents (with optional line ranges)
 - **fs_write** - Write content to files (with optional line ranges)
@@ -21,6 +21,10 @@ Advanced file and directory operations with snapshot management:
 - **fs_permissions** - Get or set Unix file permissions
 - **fs_watch** - Monitor file/directory changes
 - **fs_snapshot** - Create timestamped backups with auto-management
+- **fs_tree** - Visual directory tree with depth control and pattern filtering
+- **fs_grep** - Regex content search across files with context lines
+- **fs_tail** - Read last N lines of a file
+- **fs_replace** - Bulk find/replace across files with regex and dry-run support
 
 ### 2. Diagnostics Module
 
@@ -42,11 +46,15 @@ Bash scripting and system resource monitoring:
 
 ### 4. Time Module
 
-Time management and task scheduling:
+Time management, scheduling, and timekeeping:
 
 - **time_now** - Get current timestamp in multiple formats (Unix, ISO8601, RFC3339, custom)
 - **time_sleep** - Delay execution with configurable duration
 - **time_schedule** - In-memory task scheduler with create/cancel/list/status operations
+- **time_timezone** - Convert timestamps between IANA timezones, list available timezones
+- **time_stopwatch** - Named stopwatches with start/stop/lap/reset/status/list
+- **time_timer** - Countdown timers with check/cancel/list
+- **time_alarm** - Set alarms by time or offset, check/cancel/list
 
 ### 5. Network Module
 
@@ -108,6 +116,28 @@ Agent-centric version control tracking:
 - **gitent_rollback** - Rollback to previous commit (preview mode by default)
 
 Track file changes, create commits, view history, and rollback operations during AI agent operations.
+
+### 10. Clipboard Module
+
+Session-based copy/paste with tagging to save tokens:
+
+- **clip_copy_file** - Copy text from a file (with optional line ranges) into session clipboard with a tag
+- **clip_copy** - Copy arbitrary text directly into session clipboard with a tag
+- **clip_paste_file** - Paste tagged content into a file (overwrite/append/prepend/line-replace)
+- **clip_paste** - Retrieve tagged content or list all stored entries with metadata
+- **clip_clear** - Clear one or all clipboard entries
+
+### 11. Transform Module
+
+Text and data processing utilities:
+
+- **transform_diff** - Compare two texts or files with unified/inline/stats output
+- **transform_encode** - Encode/decode base64, URL, hex, HTML entities
+- **transform_hash** - Cryptographic hashing (SHA256, SHA512, MD5, BLAKE3) for text or files
+- **transform_regex** - Regex operations: match, find_all, replace, split, extract capture groups
+- **transform_json** - JSON manipulation: pretty-print, minify, validate, query, merge, keys, flatten
+- **transform_text** - Text transforms: case conversion, sort/reverse/unique/trim/number lines, wrap, truncate, stats
+- **transform_archive** - Create, extract, and list zip and tar.gz archives
 
 ## Installation
 

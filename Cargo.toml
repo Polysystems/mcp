@@ -1,9 +1,9 @@
 [package]
 name = "poly-mcp"
-version = "0.1.1"
+version = "0.2.0"
 edition = "2021"
 authors = ["Poly MCP Team"]
-description = "A comprehensive MCP server with filesystem, diagnostics, scripting, time, network, context, git, and input tools"
+description = "A comprehensive MCP server with filesystem, diagnostics, scripting, time, network, context, git, input, clipboard, and transform tools"
 license = "MIT"
 
 [lib]
@@ -76,6 +76,18 @@ axum = "0.7"
 tower = "0.4"
 tower-http = { version = "0.5", features = ["cors", "trace"] }
 hyper = "1.0"
+
+# Time (timezone support)
+chrono-tz = "0.10"
+
+# Transform module
+similar = "2.0"
+urlencoding = "2.1"
+sha2 = "0.10"
+md-5 = "0.10"
+blake3 = "1.5"
+regex = "1.10"
+tar = "0.4"
 
 [features]
 default = []

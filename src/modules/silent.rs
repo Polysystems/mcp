@@ -79,11 +79,12 @@ impl SilentModule {
         }).unwrap_or_default();
 
         let cwd = args["cwd"].as_str();
-        let timeout = args["timeout"].as_u64().unwrap_or(300);
+        let timeout_secs = args["timeout"].as_u64().unwrap_or(300);
 
-        // Create a temporary script file
+        // Create a temporary script file with unique name
         let temp_dir = std::env::temp_dir();
-        let script_path = temp_dir.join(format!("silent_script_{}.sh", std::process::id()));
+        let script_id = uuid::Uuid::new_v4();
+        let script_path = temp_dir.join(format!("silent_script_{}.sh", script_id));
 
         std::fs::write(&script_path, script)
             .context("Failed to write script to temp file")?;
@@ -97,8 +98,8 @@ impl SilentModule {
             std::fs::set_permissions(&script_path, perms)?;
         }
 
-        // Execute script
-        let mut cmd = Command::new("bash");
+        // Build command
+        let mut cmd = tokio::process::Command::new("bash");
         cmd.arg(&script_path);
 
         for arg in script_args {
@@ -117,24 +118,44 @@ impl SilentModule {
             }
         }
 
+        // Execute with timeout enforcement
         let start = std::time::Instant::now();
-        let output = cmd.output().context("Failed to execute script")?;
+        let timeout_dur = tokio::time::Duration::from_secs(timeout_secs);
+
+        let result = tokio::time::timeout(timeout_dur, cmd.output()).await;
         let duration = start.elapsed();
 
         // Clean up temp file
         let _ = std::fs::remove_file(&script_path);
 
-        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        match result {
+            Ok(Ok(output)) => {
+                let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+                let stderr = String::from_utf8_lossy(&output.stderr).to_string();
 
-        Ok(json!({
-            "success": output.status.success(),
-            "exit_code": output.status.code(),
-            "stdout": stdout,
-            "stderr": stderr,
-            "duration_ms": duration.as_millis(),
-            "timed_out": duration.as_secs() >= timeout
-        }))
+                Ok(json!({
+                    "success": output.status.success(),
+                    "exit_code": output.status.code(),
+                    "stdout": stdout,
+                    "stderr": stderr,
+                    "duration_ms": duration.as_millis(),
+                    "timed_out": false
+                }))
+            }
+            Ok(Err(e)) => {
+                Err(anyhow::anyhow!("Failed to execute script: {}", e))
+            }
+            Err(_) => {
+                Ok(json!({
+                    "success": false,
+                    "exit_code": null,
+                    "stdout": "",
+                    "stderr": format!("Script timed out after {} seconds", timeout_secs),
+                    "duration_ms": duration.as_millis(),
+                    "timed_out": true
+                }))
+            }
+        }
     }
 
     pub async fn resources(&mut self, args: Value) -> Result<Value> {

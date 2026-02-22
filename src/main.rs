@@ -16,6 +16,7 @@ use tower_http::cors::CorsLayer;
 
 mod modules;
 use modules::{
+    clipboard::ClipboardModule,
     filesystem::FilesystemModule,
     diagnostics::DiagnosticsModule,
     silent::SilentModule,
@@ -25,24 +26,27 @@ use modules::{
     git::GitModule,
     input::InputModule,
     gitent::GitentModule,
+    transform::TransformModule,
 };
 
 /// Poly MCP - A comprehensive Model Context Protocol server
 ///
-/// Provides 9 powerful modules for AI assistants:
+/// Provides 11 powerful modules for AI assistants:
 /// • Filesystem - File operations, snapshots, permissions
 /// • Diagnostics - Multi-language error detection
 /// • Silent - Bash scripting & resource monitoring
-/// • Time - Scheduling & time management
+/// • Time - Scheduling, timezones, stopwatch, timer, alarm
 /// • Network - HTTP requests & package queries
 /// • Context - Token counting & cost estimation
 /// • Git - Complete git operations via libgit2
 /// • Input - User interaction & notifications
 /// • Gitent - Agent-centric version control tracking
+/// • Clipboard - Session copy/paste with tags
+/// • Transform - Diff, encode, hash, regex, JSON, text, archive
 #[derive(Parser, Debug)]
 #[command(name = "poly-mcp")]
 #[command(version = env!("CARGO_PKG_VERSION"))]
-#[command(about = "A comprehensive MCP server with 9 powerful modules", long_about = None)]
+#[command(about = "A comprehensive MCP server with 11 powerful modules", long_about = None)]
 struct Cli {
     /// List all available modules and their tools
     #[arg(short, long)]
@@ -101,6 +105,8 @@ struct PolyMcp {
     git: GitModule,
     input: InputModule,
     gitent: GitentModule,
+    clipboard: ClipboardModule,
+    transform: TransformModule,
 }
 
 impl PolyMcp {
@@ -115,6 +121,8 @@ impl PolyMcp {
             git: GitModule::new(),
             input: InputModule::new(),
             gitent: GitentModule::new(),
+            clipboard: ClipboardModule::new(),
+            transform: TransformModule::new(),
         }
     }
 
@@ -126,7 +134,7 @@ impl PolyMcp {
             },
             "serverInfo": {
                 "name": "poly-mcp",
-                "version": "0.1.0"
+                "version": env!("CARGO_PKG_VERSION")
             }
         })
     }
@@ -161,6 +169,12 @@ impl PolyMcp {
         // Gitent tools
         tools.extend(self.gitent.get_tools());
 
+        // Clipboard tools
+        tools.extend(self.clipboard.get_tools());
+
+        // Transform tools
+        tools.extend(self.transform.get_tools());
+
         json!({ "tools": tools })
     }
 
@@ -183,6 +197,10 @@ impl PolyMcp {
             "fs_permissions" => self.filesystem.permissions(args).await,
             "fs_watch" => self.filesystem.watch(args).await,
             "fs_snapshot" => self.filesystem.snapshot(args).await,
+            "fs_tree" => self.filesystem.tree(args).await,
+            "fs_grep" => self.filesystem.grep(args).await,
+            "fs_tail" => self.filesystem.tail(args).await,
+            "fs_replace" => self.filesystem.replace(args).await,
 
             // Diagnostics
             "diagnostics_get" => self.diagnostics.get(args).await,
@@ -195,6 +213,10 @@ impl PolyMcp {
             "time_now" => self.time.now(args).await,
             "time_sleep" => self.time.sleep(args).await,
             "time_schedule" => self.time.schedule(args).await,
+            "time_timezone" => self.time.timezone(args).await,
+            "time_stopwatch" => self.time.stopwatch(args).await,
+            "time_timer" => self.time.timer(args).await,
+            "time_alarm" => self.time.alarm(args).await,
 
             // Network
             "net_fetch" => self.network.fetch(args).await,
@@ -240,6 +262,22 @@ impl PolyMcp {
             "gitent_diff" => self.gitent.diff(args).await,
             "gitent_rollback" => self.gitent.rollback(args).await,
 
+            // Clipboard
+            "clip_copy_file" => self.clipboard.copy_file(args).await,
+            "clip_copy" => self.clipboard.copy(args).await,
+            "clip_paste_file" => self.clipboard.paste_file(args).await,
+            "clip_paste" => self.clipboard.paste(args).await,
+            "clip_clear" => self.clipboard.clear(args).await,
+
+            // Transform
+            "transform_diff" => self.transform.diff(args).await,
+            "transform_encode" => self.transform.encode(args).await,
+            "transform_hash" => self.transform.hash(args).await,
+            "transform_regex" => self.transform.regex_op(args).await,
+            "transform_json" => self.transform.json_op(args).await,
+            "transform_text" => self.transform.text(args).await,
+            "transform_archive" => self.transform.archive(args).await,
+
             _ => Err(anyhow::anyhow!("Unknown tool: {}", name)),
         }
     }
@@ -252,19 +290,21 @@ impl PolyMcp {
         eprintln!("📡 Protocol: Model Context Protocol (MCP)");
         eprintln!("🔗 Transport: stdio (stdin/stdout) - no network port");
         eprintln!("📋 Format: JSON-RPC 2.0");
-        eprintln!("📦 Modules: 9 active modules loaded\n");
+        eprintln!("📦 Modules: 11 active modules loaded\n");
 
         if verbose {
             eprintln!("Available Modules:");
-            eprintln!("  • Filesystem    - 13 tools for file operations");
+            eprintln!("  • Filesystem    - 17 tools for file operations");
             eprintln!("  • Diagnostics   - 1 tool for error detection");
             eprintln!("  • Silent        - 2 tools for scripting & monitoring");
-            eprintln!("  • Time          - 3 tools for scheduling");
+            eprintln!("  • Time          - 7 tools for scheduling & timekeeping");
             eprintln!("  • Network       - 6 tools for HTTP & packages");
             eprintln!("  • Context       - 7 tools for token management");
             eprintln!("  • Git           - 8 tools for version control");
             eprintln!("  • Input         - 6 tools for user interaction");
-            eprintln!("  • Gitent        - 7 tools for agent tracking\n");
+            eprintln!("  • Gitent        - 7 tools for agent tracking");
+            eprintln!("  • Clipboard     - 5 tools for session copy/paste");
+            eprintln!("  • Transform     - 7 tools for text/data processing\n");
         }
 
         eprintln!("✓ Server ready and listening for JSON-RPC requests...");
@@ -280,7 +320,7 @@ impl PolyMcp {
             ("Filesystem", "File and directory operations", vec![
                 "fs_read", "fs_write", "fs_move", "fs_copy", "fs_create", "fs_delete",
                 "fs_move_desktop", "fs_find", "fs_ld", "fs_stat", "fs_permissions",
-                "fs_watch", "fs_snapshot"
+                "fs_watch", "fs_snapshot", "fs_tree", "fs_grep", "fs_tail", "fs_replace"
             ]),
             ("Diagnostics", "Language-agnostic error detection", vec![
                 "diagnostics_get"
@@ -288,8 +328,9 @@ impl PolyMcp {
             ("Silent", "Bash scripting and resource monitoring", vec![
                 "silent_script", "silent_resources"
             ]),
-            ("Time", "Time management and scheduling", vec![
-                "time_now", "time_sleep", "time_schedule"
+            ("Time", "Time management, scheduling & timekeeping", vec![
+                "time_now", "time_sleep", "time_schedule",
+                "time_timezone", "time_stopwatch", "time_timer", "time_alarm"
             ]),
             ("Network", "HTTP requests and package queries", vec![
                 "net_fetch", "net_cargo", "net_node", "net_python", "net_apt", "net_ping"
@@ -310,6 +351,13 @@ impl PolyMcp {
                 "gitent_init", "gitent_status", "gitent_track", "gitent_commit",
                 "gitent_log", "gitent_diff", "gitent_rollback"
             ]),
+            ("Clipboard", "Session copy/paste with tags", vec![
+                "clip_copy_file", "clip_copy", "clip_paste_file", "clip_paste", "clip_clear"
+            ]),
+            ("Transform", "Text & data processing", vec![
+                "transform_diff", "transform_encode", "transform_hash", "transform_regex",
+                "transform_json", "transform_text", "transform_archive"
+            ]),
         ];
 
         for (name, description, tools) in modules {
@@ -318,7 +366,7 @@ impl PolyMcp {
             println!();
         }
 
-        println!("Total: 53 tools across 9 modules\n");
+        println!("Total: 73 tools across 11 modules\n");
     }
 
     async fn handle_request(&mut self, request: JsonRpcRequest) -> JsonRpcResponse {
@@ -474,20 +522,22 @@ async fn run_http_mode(cli: &Cli) -> Result<()> {
     eprintln!("📡 Protocol: Model Context Protocol (MCP)");
     eprintln!("🔗 Transport: HTTP (JSON-RPC 2.0)");
     eprintln!("🌐 Address: http://{}", addr);
-    eprintln!("📦 Modules: 9 active modules loaded");
+    eprintln!("📦 Modules: 11 active modules loaded");
     eprintln!("💚 Health: http://{}/health\n", addr);
 
     if cli.verbose {
         eprintln!("Available Modules:");
-        eprintln!("  • Filesystem    - 13 tools for file operations");
+        eprintln!("  • Filesystem    - 17 tools for file operations");
         eprintln!("  • Diagnostics   - 1 tool for error detection");
         eprintln!("  • Silent        - 2 tools for scripting & monitoring");
-        eprintln!("  • Time          - 3 tools for scheduling");
+        eprintln!("  • Time          - 7 tools for scheduling & timekeeping");
         eprintln!("  • Network       - 6 tools for HTTP & packages");
         eprintln!("  • Context       - 7 tools for token management");
         eprintln!("  • Git           - 8 tools for version control");
         eprintln!("  • Input         - 6 tools for user interaction");
-        eprintln!("  • Gitent        - 7 tools for agent tracking\n");
+        eprintln!("  • Gitent        - 7 tools for agent tracking");
+        eprintln!("  • Clipboard     - 5 tools for session copy/paste");
+        eprintln!("  • Transform     - 7 tools for text/data processing\n");
     }
 
     eprintln!("✓ Server ready and listening for HTTP requests...");
