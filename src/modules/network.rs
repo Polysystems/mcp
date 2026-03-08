@@ -1,7 +1,5 @@
 use serde_json::{json, Value};
 use anyhow::{Result, Context as _};
-use reqwest;
-use html2md;
 use std::process::Command;
 use std::time::Duration;
 
@@ -9,11 +7,17 @@ pub struct NetworkModule {
     client: reqwest::Client,
 }
 
+impl Default for NetworkModule {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl NetworkModule {
     pub fn new() -> Self {
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(30))
-            .user_agent("poly-mcp/0.1.0")
+            .user_agent(format!("poly-mcp/{}", env!("CARGO_PKG_VERSION")))
             .build()
             .unwrap();
 

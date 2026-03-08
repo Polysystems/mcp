@@ -7,6 +7,12 @@ pub struct SilentModule {
     system: System,
 }
 
+impl Default for SilentModule {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SilentModule {
     pub fn new() -> Self {
         Self {
@@ -261,7 +267,7 @@ impl SilentModule {
     fn get_gpu_info(&self) -> Value {
         // Try to get GPU info from nvidia-smi
         if let Ok(output) = Command::new("nvidia-smi")
-            .args(&[
+            .args([
                 "--query-gpu=index,name,temperature.gpu,utilization.gpu,utilization.memory,memory.total,memory.used,memory.free",
                 "--format=csv,noheader,nounits"
             ])

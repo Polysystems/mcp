@@ -21,6 +21,12 @@ struct SnapshotInfo {
     compressed: bool,
 }
 
+impl Default for FilesystemModule {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl FilesystemModule {
     pub fn new() -> Self {
         Self {
@@ -847,7 +853,7 @@ impl FilesystemModule {
         let snapshot_dir = path_obj.parent()
             .unwrap_or_else(|| Path::new("."))
             .join(".snapshots")
-            .join(path_obj.file_name().unwrap_or_else(|| path_obj.as_os_str()));
+            .join(path_obj.file_name().unwrap_or(path_obj.as_os_str()));
 
         fs::create_dir_all(&snapshot_dir)?;
 
@@ -866,7 +872,7 @@ impl FilesystemModule {
         // Store snapshot info
         let mut snapshots = self.snapshots.lock().unwrap();
         let key = path.to_string();
-        let snapshot_list = snapshots.entry(key.clone()).or_insert_with(Vec::new);
+        let snapshot_list = snapshots.entry(key.clone()).or_default();
 
         snapshot_list.push(SnapshotInfo {
             timestamp: timestamp.clone(),
@@ -996,12 +1002,12 @@ impl FilesystemModule {
 
                     if context_lines > 0 {
                         let start = line_num.saturating_sub(context_lines);
-                        for i in start..line_num {
-                            context_before.push(lines[i]);
+                        for line in &lines[start..line_num] {
+                            context_before.push(*line);
                         }
                         let end = (line_num + 1 + context_lines).min(lines.len());
-                        for i in (line_num + 1)..end {
-                            context_after.push(lines[i]);
+                        for line in &lines[(line_num + 1)..end] {
+                            context_after.push(*line);
                         }
                     }
 
@@ -1127,6 +1133,7 @@ impl FilesystemModule {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_tree(
     dir: &Path,
     prefix: &str,
@@ -1148,7 +1155,7 @@ fn build_tree(
         .filter_map(|e| e.ok())
         .collect();
 
-    entries.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
+    entries.sort_by_key(|a| a.file_name());
 
     // Filter hidden files
     if !show_hidden {

@@ -55,6 +55,12 @@ struct Alarm {
     message: Option<String>,
 }
 
+impl Default for TimeModule {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TimeModule {
     pub fn new() -> Self {
         Self {
@@ -374,7 +380,7 @@ impl TimeModule {
 
         let mut tasks = self.scheduled_tasks.lock().unwrap();
 
-        if let Some(_) = tasks.remove(task_id) {
+        if tasks.remove(task_id).is_some() {
             Ok(json!({
                 "success": true,
                 "task_id": task_id,

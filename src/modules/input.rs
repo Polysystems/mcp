@@ -7,6 +7,12 @@ use serde_json::{json, Value};
 
 pub struct InputModule;
 
+impl Default for InputModule {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl InputModule {
     pub fn new() -> Self {
         Self

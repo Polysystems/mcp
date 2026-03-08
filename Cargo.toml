@@ -36,8 +36,8 @@ html2md = "0.2"
 # Git
 git2 = "0.18"
 
-# Gitent (optional - only works in workspace)
-gitent-core = { path = "../gitent/gitent-core", version = "0.1.0", optional = true }
+# Gitent (optional - uncomment when gitent-core is available in workspace)
+# gitent-core = { path = "../gitent/gitent-core", version = "0.1.0", optional = true }
 
 # System info
 sysinfo = "0.30"
@@ -91,4 +91,4 @@ tar = "0.4"
 
 [features]
 default = []
-gitent = ["gitent-core"]
+gitent = [] # Add "gitent-core" back when dependency is available

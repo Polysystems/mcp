@@ -18,6 +18,12 @@ struct ContextUsage {
     used_tokens: usize,
 }
 
+impl Default for ContextModule {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ContextModule {
     pub fn new() -> Self {
         Self {

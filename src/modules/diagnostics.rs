@@ -5,6 +5,12 @@ use std::path::Path;
 
 pub struct DiagnosticsModule;
 
+impl Default for DiagnosticsModule {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DiagnosticsModule {
     pub fn new() -> Self {
         Self
@@ -74,21 +80,21 @@ impl DiagnosticsModule {
 
     fn detect_tool(&self, path: &Path) -> Result<String> {
         // Check for Rust
-        if path.join("Cargo.toml").exists() || path.extension().map_or(false, |e| e == "rs") {
+        if path.join("Cargo.toml").exists() || path.extension().is_some_and(|e| e == "rs") {
             return Ok("cargo".to_string());
         }
 
         // Check for TypeScript/JavaScript
-        if path.join("tsconfig.json").exists() || path.extension().map_or(false, |e| e == "ts" || e == "tsx") {
+        if path.join("tsconfig.json").exists() || path.extension().is_some_and(|e| e == "ts" || e == "tsx") {
             return Ok("tsc".to_string());
         }
 
-        if path.join("package.json").exists() || path.extension().map_or(false, |e| e == "js" || e == "jsx") {
+        if path.join("package.json").exists() || path.extension().is_some_and(|e| e == "js" || e == "jsx") {
             return Ok("eslint".to_string());
         }
 
         // Check for Python
-        if path.extension().map_or(false, |e| e == "py") {
+        if path.extension().is_some_and(|e| e == "py") {
             // Prefer ruff if available, fallback to pylint
             if Command::new("ruff").arg("--version").output().is_ok() {
                 return Ok("ruff".to_string());
@@ -97,7 +103,7 @@ impl DiagnosticsModule {
         }
 
         // Check for C/C++
-        if path.extension().map_or(false, |e| e == "c" || e == "cpp" || e == "cc" || e == "cxx") {
+        if path.extension().is_some_and(|e| e == "c" || e == "cpp" || e == "cc" || e == "cxx") {
             if Command::new("clang").arg("--version").output().is_ok() {
                 return Ok("clang".to_string());
             }

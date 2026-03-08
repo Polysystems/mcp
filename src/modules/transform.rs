@@ -6,6 +6,12 @@ use std::path::Path;
 
 pub struct TransformModule;
 
+impl Default for TransformModule {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TransformModule {
     pub fn new() -> Self {
         Self
@@ -345,12 +351,13 @@ impl TransformModule {
             _ => return Err(anyhow::anyhow!("Unsupported encoding/action: {}/{}", encoding, action)),
         };
 
+        let output_length = result.len();
         Ok(json!({
             "result": result,
             "encoding": encoding,
             "action": action,
             "input_length": text.len(),
-            "output_length": result.len()
+            "output_length": output_length
         }))
     }
 
@@ -978,7 +985,7 @@ fn to_snake_case(s: &str) -> String {
 }
 
 fn to_camel_case(s: &str) -> String {
-    let parts: Vec<&str> = s.split(|c: char| c == '_' || c == '-' || c == ' ')
+    let parts: Vec<&str> = s.split(['_', '-', ' '])
         .filter(|p| !p.is_empty())
         .collect();
     let mut result = String::new();

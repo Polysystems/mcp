@@ -29,6 +29,12 @@ pub struct ClipboardModule {
     entries: Arc<Mutex<HashMap<String, ClipEntry>>>,
 }
 
+impl Default for ClipboardModule {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ClipboardModule {
     pub fn new() -> Self {
         Self {

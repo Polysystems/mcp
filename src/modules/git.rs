@@ -5,6 +5,12 @@ use std::path::Path;
 
 pub struct GitModule;
 
+impl Default for GitModule {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl GitModule {
     pub fn new() -> Self {
         Self
@@ -488,12 +494,10 @@ impl GitModule {
             "list" => {
                 let mut tags = Vec::new();
 
-                for name in repo.tag_names(None)?.iter() {
-                    if let Some(tag_name) = name {
-                        tags.push(json!({
-                            "name": tag_name
-                        }));
-                    }
+                for tag_name in repo.tag_names(None)?.iter().flatten() {
+                    tags.push(json!({
+                        "name": tag_name
+                    }));
                 }
 
                 Ok(json!({
