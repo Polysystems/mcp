@@ -11,3 +11,6 @@ pub mod transform;
 
 #[cfg(feature = "gitent")]
 pub mod gitent;
+
+#[cfg(feature = "premium")]
+pub mod varp_bridge;

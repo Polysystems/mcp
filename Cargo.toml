@@ -1,6 +1,6 @@
 [package]
 name = "poly-mcp"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 authors = ["Poly MCP Team"]
 description = "A comprehensive MCP server with filesystem, diagnostics, scripting, time, network, context, git, input, clipboard, and transform tools"
@@ -92,3 +92,6 @@ tar = "0.4"
 [features]
 default = []
 gitent = [] # Add "gitent-core" back when dependency is available
+# VARP premium: spawns varp-bridge binary at runtime (no source dependency).
+# Install varp-bridge + set VARP_LICENSE_KEY to enable.
+premium = []

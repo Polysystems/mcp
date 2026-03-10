@@ -109,10 +109,28 @@ struct PolyMcp {
     gitent: GitentModule,
     clipboard: ClipboardModule,
     transform: TransformModule,
+    #[cfg(feature = "premium")]
+    varp: Option<modules::varp_bridge::VarpModule>,
 }
 
 impl PolyMcp {
     fn new() -> Self {
+        #[cfg(feature = "premium")]
+        let varp = match modules::varp_bridge::VarpModule::new() {
+            Ok(Some(v)) => {
+                eprintln!("  VARP premium tools enabled ({} tools)", v.get_tools().len());
+                Some(v)
+            }
+            Ok(None) => {
+                eprintln!("  VARP premium: no license key (set VARP_LICENSE_KEY to enable)");
+                None
+            }
+            Err(e) => {
+                eprintln!("  VARP premium: {}", e);
+                None
+            }
+        };
+
         Self {
             filesystem: FilesystemModule::new(),
             diagnostics: DiagnosticsModule::new(),
@@ -126,6 +144,8 @@ impl PolyMcp {
             gitent: GitentModule::new(),
             clipboard: ClipboardModule::new(),
             transform: TransformModule::new(),
+            #[cfg(feature = "premium")]
+            varp,
         }
     }
 
@@ -178,6 +198,12 @@ impl PolyMcp {
 
         // Transform tools
         tools.extend(self.transform.get_tools());
+
+        // VARP premium tools (plan, task, iteration, vaca, workspace)
+        #[cfg(feature = "premium")]
+        if let Some(ref v) = self.varp {
+            tools.extend(v.get_tools());
+        }
 
         json!({ "tools": tools })
     }
@@ -288,6 +314,14 @@ impl PolyMcp {
             "transform_json" => self.transform.json_op(args).await,
             "transform_text" => self.transform.text(args).await,
             "transform_archive" => self.transform.archive(args).await,
+
+            // VARP premium tools (plan, task, iteration, vaca, workspace)
+            #[cfg(feature = "premium")]
+            "plan" | "task" | "iteration" | "vaca" | "workspace"
+                if self.varp.is_some() =>
+            {
+                self.varp.as_ref().unwrap().call_tool(name, args).await
+            }
 
             _ => Err(anyhow::anyhow!("Unknown tool: {}", name)),
         }
